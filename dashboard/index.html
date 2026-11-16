@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Token Launch Radar — radar-3</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="hero">
+  <p class="eyebrow">Make.fun &middot; Token Launch Radar &middot; model radar-3</p>
+  <h1>Token Launch Radar</h1>
+  <p class="lede">Every protocol that could still launch a token, ranked by what its kind is already worth
+    &mdash; valued from the market's own numbers, with the uncertainty shown, not hidden.</p>
+  <div class="chips" id="meta-chips"></div>
+</header>
+
+<main>
+  <section class="panel" id="spotlight">
+    <h2>Top 5 by implied value</h2>
+    <div class="cards" id="spotlight-cards"></div>
+  </section>
+
+  <section class="panel" id="model">
+    <h2>How the radar values a protocol</h2>
+    <div class="model-grid">
+      <div class="formula">
+        <p class="formula-line">implied = TVL &times; category multiple &times; growth &times; maturity &times; breadth</p>
+        <ul class="formula-notes">
+          <li><strong>Category multiple</strong> &mdash; the median market-cap-to-TVL multiple of the
+            tokened protocols in the same category, taken from this snapshot. Categories with fewer
+            than five tokened protocols use the global median.</li>
+          <li><strong>Growth</strong> &mdash; 1 + 0.5 &times; the 7-day TVL change, clamped to [&minus;60%, +120%].</li>
+          <li><strong>Maturity</strong> &mdash; 0.6 + 0.4 &times; min(days since listing, 1095) / 1095: a protocol
+            that has waited years without a token is worth more than a new one.</li>
+          <li><strong>Breadth</strong> &mdash; +5% for each extra chain, up to four.</li>
+          <li><strong>Range</strong> &mdash; the same product with the category's 25th and 75th percentile
+            multiples instead of the median. A wide range means the market disagrees about the kind.</li>
+        </ul>
+        <p class="check" id="model-check"></p>
+      </div>
+      <div class="multiples">
+        <h3>Category multiples &mdash; from this snapshot</h3>
+        <table id="multiples-table">
+          <thead><tr><th>Category</th><th class="num">n</th><th class="num">Multiple</th><th class="num">Range</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" id="board">
+    <h2>The board</h2>
+    <div class="tabs">
+      <button class="tab active" data-tab="pre" id="tab-pre">Pre-token</button>
+      <button class="tab" data-tab="live" id="tab-live">Already live</button>
+    </div>
+    <div class="filters" id="filters">
+      <input id="q" type="search" placeholder="Search name or slug&hellip;" aria-label="Search">
+      <select id="f-cat" aria-label="Category"><option value="">All categories</option></select>
+      <select id="f-chain" aria-label="Chain"><option value="">All chains</option></select>
+      <select id="f-tvl" aria-label="Minimum TVL">
+        <option value="0">Any TVL</option>
+        <option value="100000000">TVL &ge; $100M</option>
+        <option value="500000000">TVL &ge; $500M</option>
+        <option value="1000000000">TVL &ge; $1B</option>
+      </select>
+      <select id="f-sort" aria-label="Sort by">
+        <option value="rank">Sort: rank</option>
+        <option value="implied">Sort: implied value</option>
+        <option value="tvl">Sort: TVL</option>
+        <option value="growth">Sort: 7-day growth</option>
+        <option value="age">Sort: age</option>
+        <option value="name">Sort: name</option>
+      </select>
+    </div>
+    <p class="count" id="board-count"></p>
+    <div class="table-wrap">
+      <table id="board-table">
+        <thead>
+          <tr>
+            <th class="num">#</th><th>Protocol</th><th>Category</th><th>Chains</th>
+            <th class="num">TVL</th><th class="num">7d</th><th class="num">Age</th>
+            <th class="num">Implied value</th><th class="num">Range</th><th class="num">Multiple</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p class="hint">Click a row for the full breakdown, comparables and farm plan.</p>
+  </section>
+
+  <section class="panel" id="movers">
+    <h2>Fastest growers in the last 7 days</h2>
+    <ol class="movers" id="movers-list"></ol>
+  </section>
+
+  <section class="panel" id="categories">
+    <h2>By category</h2>
+    <table id="category-table">
+      <thead><tr><th>Category</th><th class="num">Rows</th><th class="num">TVL</th><th>Top protocol</th><th class="num">Multiple</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <section class="panel" id="guide">
+    <h2>How to read this board</h2>
+    <ol class="guide">
+      <li><strong>Rank by implied value, not by TVL.</strong> A big protocol of a kind the market
+        prices cheaply is worth less than a smaller one of a kind the market prices richly.</li>
+      <li><strong>Mind the range.</strong> A narrow range means the category agrees on a price; a wide
+        one means the implied value is a guess. Prefer narrow ranges when you pick one farm.</li>
+      <li><strong>Check the comparables.</strong> Every detail view names the tokened protocols the
+        multiple came from. If you would not hold those tokens, do not farm their cousins.</li>
+      <li><strong>Farm only what the plan says.</strong> Each detail view carries eight steps with a
+        cost and a time, sized from the protocol's own TVL and 7-day move.</li>
+      <li><strong>Implied value is a model estimate, not a price.</strong> No token exists yet, so
+        nothing here is a promise of a launch, an airdrop, or a return.</li>
+    </ol>
+  </section>
+</main>
+
+<aside class="drawer" id="drawer" aria-label="Protocol detail" hidden>
+  <button class="drawer-close" id="drawer-close" aria-label="Close">&times;</button>
+  <div id="drawer-body"></div>
+</aside>
+
+<footer>
+  <p id="provenance"></p>
+  <p>Values are model estimates from the sealed snapshot. They are not prices, not advice,
+    and not a promise that any token will launch.</p>
+</footer>
+
+<script src="../data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
