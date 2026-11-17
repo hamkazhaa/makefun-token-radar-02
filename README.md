@@ -1,4 +1,4 @@
-# Token Launch Radar — radar-3
+# Token Launch Radar — radar-4
 
 [![make.fun · token-radar-01](https://make.fun/badge/token-radar-01.svg)](https://make.fun/bounty/token-radar-01?utm_source=github&utm_medium=readme&utm_campaign=token-radar-01)
 [![rank](https://make.fun/badge/token-radar-01/hamkazhaa/makefun-token-radar-02/rank.svg)](https://make.fun/bounty/token-radar-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=token-radar-01)
@@ -13,19 +13,23 @@ calibrated on the market's own numbers — and it shows the uncertainty instead 
 ## The model
 
 ```
-implied = TVL × category multiple × growth × maturity × breadth
+implied = exp(category level) × TVL^slope × growth × maturity × breadth
 ```
 
-- **Category multiple** — the median market-cap-to-TVL multiple of the tokened protocols
-  in the same category, computed from this snapshot at runtime. Categories with fewer than
-  five tokened protocols fall back to the global median (0.223x on the practice snapshot).
-  Multiples are winsorized to [0.02, 2.0]. The dashboard prints the whole calibration table,
-  so every multiple can be checked.
+- **Category level** — the log-log fit `log(market cap) = level + slope × log(TVL)` on
+  the tokened protocols in the same category, computed from this snapshot at runtime.
+  The market does not pay a flat multiple of TVL: across the snapshot's tokened
+  protocols the fitted slope is 0.52, so small protocols trade richly per dollar of
+  TVL and large ones cheaply. The level is the category's median residual
+  (`log(mcap) − slope × log(TVL)`), shrunk toward the global level with pseudo-count 5;
+  categories with fewer than five tokened protocols use the global level. The dashboard
+  prints the whole calibration table, so every level can be checked — the multiple shown
+  is the level's multiple at the category's typical TVL.
 - **Growth** — `1 + 0.5 × clamp(change_7d, −60%, +120%)`.
 - **Maturity** — `0.6 + 0.4 × min(days since listing, 1095) / 1095`: a protocol that has
   waited years without a token is worth more than a new one.
 - **Breadth** — +5% per extra chain, up to four.
-- **Range** — the same product with the category's 25th and 75th percentile multiples
+- **Range** — the same product with the category's 25th and 75th percentile levels
   instead of the median. A wide range means the market disagrees about the kind.
 
 The board ranks all 198 rankable protocols in the practice snapshot: the 40 watchlist
@@ -46,17 +50,32 @@ predicting market cap from TVL, growth, age and chains:
 
 | | within 2× | within 3× | median error |
 |---|---|---|---|
-| radar-3 (calibrated multiples) | 31.3% | 44.5% | 3.77× |
-| radar-2 (flat 0.25× multiple) | 26.6% | 34.4% | 5.24× |
+| radar-4 (log-log fit, in-sample) | 34.4% | 48.4% | 3.38× |
+| radar-3 (calibrated multiples, in-sample) | 31.3% | 44.5% | 3.77× |
+| radar-2 (flat 0.25× multiple, in-sample) | 26.6% | 34.4% | 5.24× |
 
-In-sample, radar-3 fits the snapshot better. Out-of-sample (split-half, multiples trained
-on one half and tested on the other, n = 64 each way) it is roughly a wash: one split
-radar-3 median 6.25× vs radar-2 5.62×, the other 5.11× vs 5.22×. The FDV/TVL signal is
-very noisy either way — a median error near 5× — so the dashboard reports the in-sample
-check and does not claim radar-3 predicts much better in general. Its real edge is
-defensibility: the multiples come from the snapshot's own market data and are shown in
-full, and the ranking differentiates (Spearman ρ 0.967 vs radar-2, top-10 overlap 8/10 —
-Basis Trading and Dexs move up, Liquid-Staking-like moves down).
+In-sample numbers flatter any model fitted on the same data, so the decision was made
+on a **time-based out-of-sample test**: train on tokens listed before a cutoff, test on
+tokens listed after it (95 of the 128 tokened protocols carry a listing date). Mean over
+three cutoffs (2024-01-01, 2025-01-01, median listing date):
+
+| | within 2× | within 3× | median error |
+|---|---|---|---|
+| radar-4 (log-log, median offsets) | 32.6% | 48.4% | 3.63× |
+| radar-3 (calibrated multiples) | 29.9% | 37.1% | 5.29× |
+| flat 0.25× multiple | 24.8% | 33.6% | 5.22× |
+
+Radar-4 beats radar-3 on all three cutoffs for within-3× and median error, and on
+within-2× on two cutoffs (tying the third) — and on the largest test set (51 tokens
+listed since 2024) its error is smaller than radar-3's on 35 protocols against 16.
+The same holds on a seeded random split-half (median error 2.99×/4.06× vs 4.30×/5.69×).
+What did not survive the test, and was rejected: recency-weighted multiples, shrinkage
+toward the global median, trimmed means, a year-trend extrapolation (much worse), a
+fuller regression with 7-day change and age as extra predictors, and blends of the two
+models. The FDV/TVL signal is still very noisy — a median error near 3.6× — so the
+dashboard reports the in-sample check and does not claim precision. The ranking
+differentiates from radar-3 (Spearman ρ 0.978, top-10 overlap 8/10, 22 of 198 rows move
+20+ ranks), and every multiple is traceable to the snapshot's own market data.
 
 ## Run it
 

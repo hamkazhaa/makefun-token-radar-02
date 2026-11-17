@@ -1,4 +1,4 @@
-// radar-3: the token launch radar's entrypoint (Node 22, standard library only).
+// radar-4: the token launch radar's entrypoint (Node 22, standard library only).
 //
 // It reads the sealed snapshot from /input/snapshot.json (or --input <file|dir>), scores
 // every rankable pre-token protocol with the calibrated model in lib/model.ts, writes the
@@ -36,7 +36,7 @@ function flag(name: string, fallback: string): string {
 const inputArg = flag('input', '/input');
 const inputFile = inputArg.endsWith('.json') ? inputArg : join(inputArg, 'snapshot.json');
 if (!existsSync(inputFile)) {
-  process.stderr.write(`radar-3: no snapshot at ${inputFile}: pass --input <snapshot.json|directory> or mount the sealed /input\n`);
+  process.stderr.write(`radar-4: no snapshot at ${inputFile}: pass --input <snapshot.json|directory> or mount the sealed /input\n`);
   process.exit(2);
 }
 const out = flag('output', process.env.MAKEFUN_OUTPUT_DIR ?? '/output');
@@ -45,7 +45,7 @@ const snapshot = parseSnapshot(readFileSync(inputFile, 'utf8'));
 const { board, radar } = buildRadar(snapshot);
 const issue = boardIssue(board, snapshot);
 if (issue !== null) {
-  process.stderr.write(`radar-3: the model wrote a board the gate refuses: ${issue}\n`);
+  process.stderr.write(`radar-4: the model wrote a board the gate refuses: ${issue}\n`);
   process.exit(1);
 }
 
@@ -71,12 +71,12 @@ function copyDir(from: string, to: string): string[] {
 copyDir(join(here, 'dashboard'), join(out, 'dashboard'));
 const shots = copyDir(join(here, 'screenshots'), join(out, 'screenshots'));
 if (shots.length < 3) {
-  process.stderr.write(`radar-3: screenshots/ holds ${shots.length} image${shots.length === 1 ? '' : 's'}: hand in 3, the board, a detail view and a filtered view\n`);
+  process.stderr.write(`radar-4: screenshots/ holds ${shots.length} image${shots.length === 1 ? '' : 's'}: hand in 3, the board, a detail view and a filtered view\n`);
   process.exit(1);
 }
 for (const name of shots) {
   if (!IMAGE_NAME.test(name)) {
-    process.stderr.write(`radar-3: screenshots/${name}: a name is letters, digits and . _ -, 1 to 128 characters\n`);
+    process.stderr.write(`radar-4: screenshots/${name}: a name is letters, digits and . _ -, 1 to 128 characters\n`);
     process.exit(1);
   }
 }
@@ -88,6 +88,6 @@ writeFileSync(
 );
 
 process.stdout.write(
-  `radar-3: ${snapshot.protocols.length} protocols, ${snapshot.watchlist.length} on the watchlist, ${board.length} rows scored\n` +
-    `radar-3: wrote ${join(out, 'board.json')}, ${join(out, 'data.js')}, ${join(out, 'dashboard')}, ${join(out, 'screenshots')} (${shots.length} images) and ${join(out, 'dossier.json')}\n`,
+  `radar-4: ${snapshot.protocols.length} protocols, ${snapshot.watchlist.length} on the watchlist, ${board.length} rows scored\n` +
+    `radar-4: wrote ${join(out, 'board.json')}, ${join(out, 'data.js')}, ${join(out, 'dashboard')}, ${join(out, 'screenshots')} (${shots.length} images) and ${join(out, 'dossier.json')}\n`,
 );
