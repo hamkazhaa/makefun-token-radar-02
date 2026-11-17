@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Token Launch Radar — radar-3</title>
+<title>Token Launch Radar — radar-4</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
 <header class="hero">
-  <p class="eyebrow">Make.fun &middot; Token Launch Radar &middot; model radar-3</p>
+  <p class="eyebrow">Make.fun &middot; Token Launch Radar &middot; model radar-4</p>
   <h1>Token Launch Radar</h1>
   <p class="lede">Every protocol that could still launch a token, ranked by what its kind is already worth
     &mdash; valued from the market's own numbers, with the uncertainty shown, not hidden.</p>
@@ -26,17 +26,24 @@
     <h2>How the radar values a protocol</h2>
     <div class="model-grid">
       <div class="formula">
-        <p class="formula-line">implied = TVL &times; category multiple &times; growth &times; maturity &times; breadth</p>
+        <p class="formula-line">implied = e<sup>category level</sup> &times; TVL<sup>slope</sup> &times; growth &times; maturity &times; breadth</p>
         <ul class="formula-notes">
-          <li><strong>Category multiple</strong> &mdash; the median market-cap-to-TVL multiple of the
-            tokened protocols in the same category, taken from this snapshot. Categories with fewer
-            than five tokened protocols use the global median.</li>
+          <li><strong>Category level</strong> &mdash; the log-log fit log(market cap) = level +
+            slope &times; log(TVL) on the tokened protocols in the same category, taken from
+            this snapshot. The level is the category's median residual, shrunk toward the
+            global level; categories with fewer than five tokened protocols use the global
+            level. The table shows the multiple the level implies at the category's typical
+            TVL &mdash; the multiple falls as TVL grows, because the fitted slope is below 1.</li>
           <li><strong>Growth</strong> &mdash; 1 + 0.5 &times; the 7-day TVL change, clamped to [&minus;60%, +120%].</li>
           <li><strong>Maturity</strong> &mdash; 0.6 + 0.4 &times; min(days since listing, 1095) / 1095: a protocol
             that has waited years without a token is worth more than a new one.</li>
           <li><strong>Breadth</strong> &mdash; +5% for each extra chain, up to four.</li>
           <li><strong>Range</strong> &mdash; the same product with the category's 25th and 75th percentile
-            multiples instead of the median. A wide range means the market disagrees about the kind.</li>
+            levels instead of the median. A wide range means the market disagrees about the kind.</li>
+          <li><strong>Validated out-of-sample</strong> &mdash; trained on tokens listed before a date
+            and tested on later ones, the model lands within 2&times; of the real market cap
+            33% of the time (median error 3.6&times;), against 30% (5.3&times;) for the
+            flat-multiple model it replaces. The full numbers are in the repository's README.</li>
         </ul>
         <p class="check" id="model-check"></p>
       </div>

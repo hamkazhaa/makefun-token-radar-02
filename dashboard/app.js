@@ -1,4 +1,4 @@
-// radar-3 dashboard: renders window.RADAR (written by main.ts into ../data.js).
+// radar-4 dashboard: renders window.RADAR (written by main.ts into ../data.js).
 // No network, no fetch: the whole dataset ships with the page.
 (function () {
   var R = window.RADAR;
@@ -60,7 +60,9 @@
     (cal.check.within2x * 100).toFixed(0) + '%</b> of the time (median error <b>' +
     cal.check.medianFactor.toFixed(2) + '&times;</b>), against <b>' +
     (cal.check.flatWithin2x * 100).toFixed(0) + '%</b> for a flat 0.25&times; rule (median ' +
-    cal.check.flatMedianFactor.toFixed(2) + '&times;). * = category too thin for its own multiple, so the global median is used. ' +
+    cal.check.flatMedianFactor.toFixed(2) + '&times;). The fit is log-log with slope <b>' +
+    cal.slope.toFixed(2) + '</b>: market cap grows as TVL<sup>' + cal.slope.toFixed(2) + '</sup>, so small ' +
+    'protocols trade richer per TVL. * = category too thin for its own level, so the global level is used. ' +
     'These are in-sample figures: they show the calibration fits the snapshot, not that it predicts the future.';
 
   // ---- filter options -----------------------------------------------------
@@ -175,9 +177,9 @@
         '<div class="row"><span>&times; breadth (' + r.chains.length + ' chain' + (r.chains.length === 1 ? '' : 's') + ')</span><span>' + r.breadth_multiplier.toFixed(3) + '&times;</span></div>' +
         '<div class="row"><span>Implied value</span><span>' + money(r.implied_value_usd) + '</span></div>' +
         '</div>' +
-        '<p class="meta">' + (r.multiple_source === 'global median'
-          ? 'This category has too few tokened protocols in this snapshot for its own multiple, so the global median is used instead — the comparables below are the tokened ' + esc(r.category || 'Uncategorized') + ' protocols that exist. '
-          : 'The multiple is the median of the tokened ' + esc(r.category || 'Uncategorized') + ' protocols below, taken from this snapshot — not a number chosen by hand. ') +
+        '<p class="meta">' + (r.multiple_source === 'global log-fit'
+          ? 'This category has too few tokened protocols in this snapshot for its own level, so the global level is used instead — the comparables below are the tokened ' + esc(r.category || 'Uncategorized') + ' protocols that exist. '
+          : 'The level is fitted from the tokened ' + esc(r.category || 'Uncategorized') + ' protocols below — log market cap against log TVL, taken from this snapshot — not a number chosen by hand. ') +
         'Base ' + money(Math.round(base)) + ' &times; ' + r.multiple.toFixed(4) + '&times;.</p>' +
         '<h3>Comparables — tokened protocols in the same category</h3>' +
         '<table class="comp"><thead><tr><th>Protocol</th><th class="num">Market cap</th><th class="num">TVL</th><th class="num">Multiple</th></tr></thead><tbody>' +
