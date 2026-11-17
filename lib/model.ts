@@ -1,4 +1,4 @@
-// radar-3: a token launch radar whose value model is calibrated on the snapshot itself.
+// radar-4: a token launch radar whose value model is calibrated on the snapshot itself.
 //
 // The board ranks every rankable pre-token protocol in the sealed snapshot — the whole
 // watchlist plus every other protocol that records no token and is not a wrapped, staked
@@ -6,20 +6,24 @@
 // function scores every row, and every number it uses comes from the snapshot's own figures.
 //
 // The model's one idea: a token's value is what the market already pays for the same kind
-// of protocol. For each category, the model takes the median market-cap-to-TVL multiple of
-// the tokened protocols in that category (at least five of them, else the global median),
-// winsorized to [0.02, 2.0], and applies it to the pre-token protocol's TVL. Growth,
-// tenure without a token and chain breadth then adjust that base. The dashboard shows the
-// whole calibration table, so a reader can see where every multiple came from.
+// of protocol — but the market does not pay a flat multiple of TVL. Across the snapshot's
+// tokened protocols, log market cap grows with log TVL with a slope near 0.58, not 1:
+// small protocols trade richly per dollar of TVL, large ones cheaply. So the model fits
+// log(mcap) = level + slope x log(TVL) on the tokened protocols, with a per-category
+// level (the median residual for the category, shrunk toward the global level with
+// weight 5) and the same growth, tenure and chain-breadth adjustments as before.
+// The dashboard shows the whole calibration table, so a reader can see where every
+// level came from — and the multiple it implies at the category's typical TVL.
 //
-//   implied = tvl_usd x categoryMultiple
-//           x (1 + clamp(change_7d, -60, 120) / 100 x 0.5)
+//   implied = exp(level) x TVL^slope x (1 + clamp(change_7d, -60, 120) / 100 x 0.5)
 //           x (0.6 + min(age_days, 1095) / 1095 x 0.4)
 //           x (1 + 0.05 x min(chains - 1, 4))
 //
-// The low/high band of an implied value re-runs the same product with the category's 25th
-// and 75th percentile multiples instead of its median: an honest range, not a point
-// pretending to be certain.
+// The low/high band of an implied value re-runs the same product with the category's
+// 25th and 75th percentile levels instead of its median: an honest range, not a point
+// pretending to be certain. The multiple a row shows is the effective multiple at its
+// own TVL, exp(level) x TVL^(slope - 1), so the detail view's arithmetic still reads
+// TVL x multiple x growth x maturity x breadth.
 
 /** The snapshot's protocol entry: exactly the ten fields the sealed input carries. */
 export interface SnapshotProtocol {
@@ -44,20 +48,30 @@ export interface Snapshot {
   watchlist: string[];
 }
 
-/** One category's calibration: the market multiples of its tokened protocols. */
+/** One category's calibration: the fitted level of its tokened protocols. */
 export interface CategoryMultiple {
   category: string;
   n: number;
+  /** The multiple the fitted level implies at the category's typical TVL (for the table). */
   median: number;
   p25: number;
   p75: number;
   fromGlobal: boolean;
+  /** The fitted level itself: log(mcap) = level + slope x log(TVL). */
+  level: number;
+  levelLow: number;
+  levelHigh: number;
+  /** The typical TVL the displayed multiple is evaluated at (geometric mean of the category's tokened TVLs). */
+  refTvl: number;
 }
 
-/** The whole calibration: every category's multiple plus the global fallback. */
+/** The whole calibration: every category's level plus the global fallback and the fitted slope. */
 export interface Calibration {
   byCategory: CategoryMultiple[];
+  /** The global level triple: exp() of the median / p25 / p75 of all tokened residuals. */
   global: { median: number; p25: number; p75: number };
+  /** The fitted log-log slope of market cap on TVL. */
+  slope: number;
   /** In-sample check: how well the calibrated model predicts the tokened protocols' own market caps. */
   check: {
     n: number;
@@ -71,7 +85,7 @@ export interface Calibration {
 }
 
 /** The model's version label: the dashboard names it. */
-export const MODEL_VERSION = 'radar-3';
+export const MODEL_VERSION = 'radar-4';
 
 /** How many live-token protocols the Live view carries, by market cap. */
 export const LIVE_ROWS = 24;
@@ -272,46 +286,88 @@ function bySlug(protocols: SnapshotProtocol[]): Map<string, SnapshotProtocol> {
 
 const round4 = (n: number): number => Math.round(n * 1e4) / 1e4;
 
+/** How strongly a category's own level counts against the global one (pseudo-count). */
+const SHRINK_K = 5;
+
 /**
- * Calibrate the model on the snapshot's own tokened protocols: for every category with at
- * least five tokened protocols carrying a market cap and a TVL, the median of their
- * market-cap-to-TVL multiples, winsorized to [0.02, 2.0]; thinner categories fall back to
- * the global median. The check at the end measures, in-sample, how well the calibrated
- * model predicts those same tokens' market caps against a flat 0.25x rule.
+ * Calibrate the model on the snapshot's own tokened protocols: fit the log-log slope
+ * of market cap on TVL, then take, per category, the median / p25 / p75 of the
+ * residuals log(mcap) - slope x log(TVL), each shrunk toward the corresponding global
+ * value with pseudo-count 5 (thin categories fall back to the global level). The
+ * displayed multiple is the level's multiple at the category's typical TVL. The check
+ * at the end measures, in-sample, how well the calibrated model predicts those same
+ * tokens' market caps against a flat 0.25x rule.
  */
 export function calibrate(snapshot: Snapshot): Calibration {
   const tokened = snapshot.protocols.filter((p) => p.mcap_usd !== null && p.mcap_usd > 0 && p.tvl_usd > 0);
-  const ratios = tokened.map((p) => p.mcap_usd! / p.tvl_usd);
-  const global = {
-    median: medianOf(ratios),
-    p25: percentileOf(ratios, 0.25),
-    p75: percentileOf(ratios, 0.75),
-  };
-  const byCat = new Map<string, number[]>();
+  const xs = tokened.map((p) => Math.log(p.tvl_usd));
+  const ys = tokened.map((p) => Math.log(p.mcap_usd!));
+  const mx = xs.length === 0 ? 0 : xs.reduce((t, x) => t + x, 0) / xs.length;
+  const my = ys.length === 0 ? 0 : ys.reduce((t, y) => t + y, 0) / ys.length;
+  let num = 0;
+  let den = 0;
+  for (let i = 0; i < xs.length; i++) {
+    num += (xs[i]! - mx) * (ys[i]! - my);
+    den += (xs[i]! - mx) ** 2;
+  }
+  const slope = den === 0 ? 1 : num / den;
+  const resid = tokened.map((p) => Math.log(p.mcap_usd!) - slope * Math.log(p.tvl_usd));
+  const gMed = medianOf(resid);
+  const gP25 = percentileOf(resid, 0.25);
+  const gP75 = percentileOf(resid, 0.75);
+  const global = { median: Math.exp(gMed), p25: Math.exp(gP25), p75: Math.exp(gP75) };
+  const byCat = new Map<string, { res: number[]; tvls: number[] }>();
   for (const p of tokened) {
     const key = p.category ?? 'Uncategorized';
     const list = byCat.get(key);
-    if (list === undefined) byCat.set(key, [p.mcap_usd! / p.tvl_usd]);
-    else list.push(p.mcap_usd! / p.tvl_usd);
+    const r = Math.log(p.mcap_usd!) - slope * Math.log(p.tvl_usd);
+    if (list === undefined) byCat.set(key, { res: [r], tvls: [p.tvl_usd] });
+    else {
+      list.res.push(r);
+      list.tvls.push(p.tvl_usd);
+    }
   }
   const byCategory: CategoryMultiple[] = [...byCat.entries()]
-    .map(([category, values]) => {
-      const useOwn = values.length >= 5;
-      const src = useOwn ? values : ratios;
+    .map(([category, { res, tvls }]) => {
+      const n = res.length;
+      const useOwn = n >= 5;
+      const ownMed = useOwn ? medianOf(res) : gMed;
+      const ownP25 = useOwn ? percentileOf(res, 0.25) : gP25;
+      const ownP75 = useOwn ? percentileOf(res, 0.75) : gP75;
+      // Shrink each of the three levels toward its global value with pseudo-count 5;
+      // the same weight on all three keeps low <= median <= high.
+      const level = (n * ownMed + SHRINK_K * gMed) / (n + SHRINK_K);
+      const levelLow = (n * ownP25 + SHRINK_K * gP25) / (n + SHRINK_K);
+      const levelHigh = (n * ownP75 + SHRINK_K * gP75) / (n + SHRINK_K);
+      const refTvl = Math.exp(tvls.reduce((t, v) => t + Math.log(v), 0) / tvls.length);
+      const multipleAt = (lv: number): number => Math.exp(lv) * Math.pow(refTvl, slope - 1);
       return {
         category,
-        n: values.length,
-        median: Math.min(2, Math.max(0.02, medianOf(src))),
-        p25: Math.min(2, Math.max(0.02, percentileOf(src, 0.25))),
-        p75: Math.min(2, Math.max(0.02, percentileOf(src, 0.75))),
+        n,
+        median: round4(multipleAt(level)),
+        p25: round4(multipleAt(levelLow)),
+        p75: round4(multipleAt(levelHigh)),
         fromGlobal: !useOwn,
+        level: round4(level),
+        levelLow: round4(levelLow),
+        levelHigh: round4(levelHigh),
+        refTvl: Math.round(refTvl),
       };
     })
     .sort((a, b) => b.median - a.median || (a.category < b.category ? -1 : 1));
-  const multipleFor = (category: string | null): CategoryMultiple => {
-    const found = byCategory.find((c) => c.category === (category ?? 'Uncategorized'));
-    if (found !== undefined) return found;
-    return { category: category ?? 'Uncategorized', n: 0, median: global.median, p25: global.p25, p75: global.p75, fromGlobal: true };
+  const calib: Calibration = {
+    byCategory,
+    global,
+    slope: round4(slope),
+    check: {
+      n: 0,
+      within2x: 0,
+      within3x: 0,
+      medianFactor: 0,
+      flatWithin2x: 0,
+      flatWithin3x: 0,
+      flatMedianFactor: 0,
+    },
   };
   // In-sample check: predict each tokened protocol's market cap with the calibrated model
   // and with a flat 0.25x rule, and count how often each lands within 2x and 3x.
@@ -323,8 +379,7 @@ export function calibrate(snapshot: Snapshot): Calibration {
   const flatFactors: number[] = [];
   for (const p of tokened) {
     const f = growthAndMaturity(p, snapshot.as_of);
-    const mult = multipleFor(p.category).median;
-    const pred = Math.max(1, p.tvl_usd * mult * f.growthMult * f.maturityMult * f.breadthMult);
+    const pred = impliedValue(p, calib, snapshot.as_of).implied;
     const flat = Math.max(1, p.tvl_usd * 0.25 * f.growthMult * f.maturityMult * f.breadthMult);
     const err = Math.abs(Math.log(pred / p.mcap_usd!));
     const flatErr = Math.abs(Math.log(flat / p.mcap_usd!));
@@ -336,19 +391,16 @@ export function calibrate(snapshot: Snapshot): Calibration {
     flatFactors.push(flatErr);
   }
   const n = tokened.length;
-  return {
-    byCategory,
-    global,
-    check: {
-      n,
-      within2x: n === 0 ? 0 : within2 / n,
-      within3x: n === 0 ? 0 : within3 / n,
-      medianFactor: n === 0 ? 0 : round4(Math.exp(medianOf(factors))),
-      flatWithin2x: n === 0 ? 0 : flat2 / n,
-      flatWithin3x: n === 0 ? 0 : flat3 / n,
-      flatMedianFactor: n === 0 ? 0 : round4(Math.exp(medianOf(flatFactors))),
-    },
+  calib.check = {
+    n,
+    within2x: n === 0 ? 0 : within2 / n,
+    within3x: n === 0 ? 0 : within3 / n,
+    medianFactor: n === 0 ? 0 : round4(Math.exp(medianOf(factors))),
+    flatWithin2x: n === 0 ? 0 : flat2 / n,
+    flatWithin3x: n === 0 ? 0 : flat3 / n,
+    flatMedianFactor: n === 0 ? 0 : round4(Math.exp(medianOf(flatFactors))),
   };
+  return calib;
 }
 
 /** The growth, maturity and breadth multipliers one protocol gets. Shared by the model and its check. */
@@ -372,15 +424,20 @@ export function impliedValue(
 ): { implied: number; low: number; high: number; multiple: number; multipleLow: number; multipleHigh: number; source: string; growthPct: number; growthMult: number; maturityMult: number; breadthMult: number; age: number | null } {
   const f = growthAndMaturity(p, asOf);
   const entry = calib.byCategory.find((c) => c.category === (p.category ?? 'Uncategorized'));
-  const multiple = entry !== undefined ? entry.median : calib.global.median;
-  const multipleLow = entry !== undefined ? entry.p25 : calib.global.p25;
-  const multipleHigh = entry !== undefined ? entry.p75 : calib.global.p75;
-  const source = entry !== undefined && !entry.fromGlobal ? `${p.category ?? 'Uncategorized'} median` : 'global median';
-  const base = p.tvl_usd * f.growthMult * f.maturityMult * f.breadthMult;
+  const level = entry !== undefined ? entry.level : Math.log(calib.global.median);
+  const levelLow = entry !== undefined ? entry.levelLow : Math.log(calib.global.p25);
+  const levelHigh = entry !== undefined ? entry.levelHigh : Math.log(calib.global.p75);
+  const source = entry !== undefined && !entry.fromGlobal ? `${p.category ?? 'Uncategorized'} log-fit` : 'global log-fit';
+  // The effective multiple at this protocol's own TVL: exp(level) x TVL^(slope - 1).
+  const multAt = (lv: number): number => (p.tvl_usd > 0 ? Math.exp(lv) * Math.pow(p.tvl_usd, calib.slope - 1) : 0);
+  const multiple = multAt(level);
+  const multipleLow = multAt(levelLow);
+  const multipleHigh = multAt(levelHigh);
+  const valueAt = (lv: number): number => Math.exp(lv) * Math.pow(p.tvl_usd, calib.slope) * f.growthMult * f.maturityMult * f.breadthMult;
   return {
-    implied: Math.max(1, Math.round(base * multiple)),
-    low: Math.max(1, Math.round(base * multipleLow)),
-    high: Math.max(1, Math.round(base * multipleHigh)),
+    implied: Math.max(1, Math.round(valueAt(level))),
+    low: Math.max(1, Math.round(valueAt(levelLow))),
+    high: Math.max(1, Math.round(valueAt(levelHigh))),
     multiple: round4(multiple),
     multipleLow: round4(multipleLow),
     multipleHigh: round4(multipleHigh),
